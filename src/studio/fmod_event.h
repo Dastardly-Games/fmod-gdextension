@@ -56,6 +56,27 @@ namespace godot {
         const String& get_programmers_callback_sound_key() const;
         void set_distance_scale(float scale);
 
+        // Event property override (min/max distance, priority, etc.)
+        void set_event_property(int property, float value) const;
+        float get_event_property(int property) const;
+
+        // DSP parameter access (for Steam Audio source handle binding)
+        int get_dsp_parameter_int(int dsp_index, int param_index) const;
+        void set_dsp_parameter_int(int dsp_index, int param_index, int value) const;
+        bool get_dsp_parameter_bool(int dsp_index, int param_index) const;
+        void set_dsp_parameter_bool(int dsp_index, int param_index, bool value) const;
+        int get_channel_group_dsp_count() const;
+        void set_dsp_bypass(int dsp_index, bool bypass) const;
+
+        // Start event and bind Steam Audio source handle via FMOD callback.
+        // Sets DSP params on the audio thread when channel group is allocated.
+        // sa_handle: Steam Audio source handle (param 33).
+        // enable_occlusion: set occlusion to simulation-defined.
+        // enable_reflections: set reflections on.
+        // disable_direct_binaural: for local player (no HRTF on direct path).
+        void start_with_sa_source(int sa_handle, bool enable_occlusion,
+                                  bool enable_reflections, bool disable_direct_binaural);
+
     protected:
         static void _bind_methods();
     };

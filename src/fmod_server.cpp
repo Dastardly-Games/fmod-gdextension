@@ -218,6 +218,22 @@ void FmodServer::init(const Ref<FmodGeneralSettings>& p_settings) {
         GODOT_LOG_VERBOSE("Custom File System enabled.")
     }
     cache = new FmodCache(system, coreSystem);
+
+    // Auto-load Steam Audio FMOD plugin if available (must happen before banks load)
+    {
+        String sa_paths[] = {
+            "res://addons/steam_audio/libs/windows-x64/phonon_fmod.dll",
+            "res://addons/steam_audio/libs/linux-x64/libphonon_fmod.so",
+            "res://addons/steam_audio/libs/macos/libphonon_fmod.dylib",
+        };
+        for (const String& sa_path : sa_paths) {
+            if (FileAccess::file_exists(sa_path)) {
+                load_plugin(sa_path);
+                GODOT_LOG_INFO("Steam Audio FMOD plugin loaded")
+                break;
+            }
+        }
+    }
 }
 
 void FmodServer::update() {

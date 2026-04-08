@@ -41,6 +41,20 @@ void FmodEvent::_bind_methods() {
     ClassDB::bind_method(D_METHOD("is_valid"), &FmodEvent::is_valid);
     ClassDB::bind_method(D_METHOD("release"), &FmodEvent::release);
 
+    // Event property override (FMOD_STUDIO_EVENT_PROPERTY: 3=MIN_DISTANCE, 4=MAX_DISTANCE)
+    ClassDB::bind_method(D_METHOD("set_event_property", "property", "value"), &FmodEvent::set_event_property);
+    ClassDB::bind_method(D_METHOD("get_event_property", "property"), &FmodEvent::get_event_property);
+
+    // DSP parameter access (Steam Audio source handle binding)
+    ClassDB::bind_method(D_METHOD("get_dsp_parameter_int", "dsp_index", "param_index"), &FmodEvent::get_dsp_parameter_int);
+    ClassDB::bind_method(D_METHOD("set_dsp_parameter_int", "dsp_index", "param_index", "value"), &FmodEvent::set_dsp_parameter_int);
+    ClassDB::bind_method(D_METHOD("get_dsp_parameter_bool", "dsp_index", "param_index"), &FmodEvent::get_dsp_parameter_bool);
+    ClassDB::bind_method(D_METHOD("set_dsp_parameter_bool", "dsp_index", "param_index", "value"), &FmodEvent::set_dsp_parameter_bool);
+    ClassDB::bind_method(D_METHOD("get_channel_group_dsp_count"), &FmodEvent::get_channel_group_dsp_count);
+    ClassDB::bind_method(D_METHOD("set_dsp_bypass", "dsp_index", "bypass"), &FmodEvent::set_dsp_bypass);
+    ClassDB::bind_method(D_METHOD("start_with_sa_source", "sa_handle", "enable_occlusion", "enable_reflections", "disable_direct_binaural"),
+        &FmodEvent::start_with_sa_source);
+
     ADD_PROPERTY(PropertyInfo(Variant::BOOL, "paused",PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "set_paused", "get_paused");
     ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "pitch",PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "set_pitch", "get_pitch");
     ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "volume",PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "set_volume", "get_volume");
@@ -254,6 +268,181 @@ const String& FmodEvent::get_programmers_callback_sound_key() const {
 
 void FmodEvent::set_distance_scale(float scale){
     distanceScale = scale;
+}
+
+// ---- Event property override ----
+
+void FmodEvent::set_event_property(int property, float value) const {
+    if (!is_valid()) return;
+    ERROR_CHECK(_wrapped->setProperty((FMOD_STUDIO_EVENT_PROPERTY)property, value));
+}
+
+float FmodEvent::get_event_property(int property) const {
+    if (!is_valid()) return 0.0f;
+    float value = 0.0f;
+    ERROR_CHECK(_wrapped->getProperty((FMOD_STUDIO_EVENT_PROPERTY)property, &value));
+    return value;
+}
+
+// ---- DSP parameter access ----
+
+int FmodEvent::get_dsp_parameter_int(int dsp_index, int param_index) const {
+    if (!is_valid()) return 0;
+
+    FMOD::ChannelGroup* channel_group = nullptr;
+    if (_wrapped->getChannelGroup(&channel_group) != FMOD_OK || !channel_group) return 0;
+
+    FMOD::DSP* dsp = nullptr;
+    if (channel_group->getDSP(dsp_index, &dsp) != FMOD_OK || !dsp) return 0;
+
+    int value = 0;
+    dsp->getParameterInt(param_index, &value, nullptr, 0);
+    return value;
+}
+
+void FmodEvent::set_dsp_parameter_int(int dsp_index, int param_index, int value) const {
+    if (!is_valid()) return;
+
+    FMOD::ChannelGroup* channel_group = nullptr;
+    if (_wrapped->getChannelGroup(&channel_group) != FMOD_OK || !channel_group) return;
+
+    FMOD::DSP* dsp = nullptr;
+    if (channel_group->getDSP(dsp_index, &dsp) != FMOD_OK || !dsp) return;
+
+    dsp->setParameterInt(param_index, value);
+}
+
+bool FmodEvent::get_dsp_parameter_bool(int dsp_index, int param_index) const {
+    if (!is_valid()) return false;
+
+    FMOD::ChannelGroup* channel_group = nullptr;
+    if (_wrapped->getChannelGroup(&channel_group) != FMOD_OK || !channel_group) return false;
+
+    FMOD::DSP* dsp = nullptr;
+    if (channel_group->getDSP(dsp_index, &dsp) != FMOD_OK || !dsp) return false;
+
+    bool value = false;
+    dsp->getParameterBool(param_index, &value, nullptr, 0);
+    return value;
+}
+
+void FmodEvent::set_dsp_parameter_bool(int dsp_index, int param_index, bool value) const {
+    if (!is_valid()) return;
+
+    FMOD::ChannelGroup* channel_group = nullptr;
+    if (_wrapped->getChannelGroup(&channel_group) != FMOD_OK || !channel_group) return;
+
+    FMOD::DSP* dsp = nullptr;
+    if (channel_group->getDSP(dsp_index, &dsp) != FMOD_OK || !dsp) return;
+
+    dsp->setParameterBool(param_index, value);
+}
+
+void FmodEvent::set_dsp_bypass(int dsp_index, bool bypass) const {
+    if (!is_valid()) return;
+
+    FMOD::ChannelGroup* channel_group = nullptr;
+    if (_wrapped->getChannelGroup(&channel_group) != FMOD_OK || !channel_group) return;
+
+    FMOD::DSP* dsp = nullptr;
+    if (channel_group->getDSP(dsp_index, &dsp) != FMOD_OK || !dsp) return;
+
+    dsp->setBypass(bypass);
+}
+
+int FmodEvent::get_channel_group_dsp_count() const {
+    if (!is_valid()) return 0;
+
+    FMOD::ChannelGroup* channel_group = nullptr;
+    if (_wrapped->getChannelGroup(&channel_group) != FMOD_OK || !channel_group) return 0;
+
+    int count = 0;
+    channel_group->getNumDSPs(&count);
+    return count;
+}
+
+// ---- Steam Audio source binding via FMOD callback ----
+
+struct SA_BindParams {
+    int sa_handle;
+    bool enable_occlusion;
+    bool enable_reflections;
+    bool disable_direct_binaural;
+};
+
+static FMOD_RESULT F_CALL sa_bind_callback(
+    FMOD_STUDIO_EVENT_CALLBACK_TYPE type,
+    FMOD_STUDIO_EVENTINSTANCE* event,
+    void* parameters)
+{
+    if (type == FMOD_STUDIO_EVENT_CALLBACK_STARTED) {
+        FMOD::Studio::EventInstance* inst = reinterpret_cast<FMOD::Studio::EventInstance*>(event);
+
+        void* ud = nullptr;
+        inst->getUserData(&ud);
+        if (!ud) {
+            // fprintf(stderr, "SA callback STARTED: no userdata\n");
+            return FMOD_OK;
+        }
+
+        SA_BindParams* params = static_cast<SA_BindParams*>(ud);
+
+        FMOD::ChannelGroup* cg = nullptr;
+        if (inst->getChannelGroup(&cg) == FMOD_OK && cg) {
+            int numDsps = 0;
+            cg->getNumDSPs(&numDsps);
+
+            // Find the Steam Audio Spatializer DSP by trying param 33 on each DSP.
+            // The Spatializer accepts it; other DSPs return FMOD_ERR_INVALID_PARAM.
+            for (int di = 0; di < numDsps; di++) {
+                FMOD::DSP* dsp = nullptr;
+                if (cg->getDSP(di, &dsp) != FMOD_OK || !dsp) continue;
+
+                if (dsp->setParameterInt(33, params->sa_handle) == FMOD_OK) {
+                    // fprintf(stderr, "SA callback: bound handle=%d to DSP index %d/%d\n",
+                    //     params->sa_handle, di, numDsps);
+                    if (params->enable_occlusion) {
+                        dsp->setParameterInt(5, 1);
+                        dsp->setParameterInt(6, 1);
+                    }
+                    if (params->enable_reflections) {
+                        dsp->setParameterBool(7, true);
+                        dsp->setParameterBool(26, true);
+                    }
+                    if (params->disable_direct_binaural) {
+                        dsp->setParameterBool(31, false);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    else if (type == FMOD_STUDIO_EVENT_CALLBACK_DESTROYED) {
+        // Clean up our allocation
+        void* ud = nullptr;
+        FMOD::Studio::EventInstance* inst = reinterpret_cast<FMOD::Studio::EventInstance*>(event);
+        inst->getUserData(&ud);
+        if (ud) {
+            delete static_cast<SA_BindParams*>(ud);
+            inst->setUserData(nullptr);
+        }
+    }
+    return FMOD_OK;
+}
+
+void FmodEvent::start_with_sa_source(int sa_handle, bool enable_occlusion,
+                                     bool enable_reflections, bool disable_direct_binaural) {
+    if (!is_valid()) return;
+
+    // Allocate params for the callback (freed on DESTROYED)
+    auto* params = new SA_BindParams{sa_handle, enable_occlusion, enable_reflections, disable_direct_binaural};
+
+    // Override userData to our params (replaces the FmodEvent* that was set earlier)
+    _wrapped->setUserData(params);
+    _wrapped->setCallback(sa_bind_callback,
+        FMOD_STUDIO_EVENT_CALLBACK_STARTED | FMOD_STUDIO_EVENT_CALLBACK_DESTROYED);
+    _wrapped->start();
+    _wrapped->release();
 }
 
 FmodEvent::~FmodEvent() {

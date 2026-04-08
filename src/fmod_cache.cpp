@@ -80,11 +80,16 @@ Ref<FmodBank> FmodCache::get_bank(const String& bankPath) {
 uint32_t FmodCache::add_plugin(const String& p_plugin_path, uint32_t p_priority) {
     uint32_t handle;
 #if defined(ANDROID_ENABLED) && !defined(TOOLS_ENABLED)
-    const char* plugin_path = p_plugin_path.utf8().get_data();
+    CharString utf8 = p_plugin_path.utf8();
 #else
-    const char* plugin_path = ProjectSettings::get_singleton()->globalize_path(p_plugin_path).utf8().get_data();
+    // Keep the CharString alive — get_data() returns a pointer into its buffer,
+    // and a temporary would be destroyed before loadPlugin reads it.
+    CharString utf8 = ProjectSettings::get_singleton()->globalize_path(p_plugin_path).utf8();
 #endif
-    ERROR_CHECK(core_system->loadPlugin(plugin_path, &handle, p_priority));
+    if (!ERROR_CHECK(core_system->loadPlugin(utf8.get_data(), &handle, p_priority))) {
+        GODOT_LOG_ERROR(vformat("Failed to load plugin: %s", p_plugin_path));
+        return 0xFFFFFFFF;
+    }
     plugin_handles.append(handle);
     return handle;
 }
