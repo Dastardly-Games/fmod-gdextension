@@ -286,13 +286,26 @@ namespace godot {
 
     template<FmodServer::EventIdentifierType parameter_type>
     Ref<FmodEvent> FmodServer::_create_event_instance(const EventIdentifier& identifier) {
+        Ref<FmodEventDescription> desc = fetch_event_description<parameter_type>(identifier);
         FMOD::Studio::EventInstance* eventInstance = nullptr;
-        ERROR_CHECK(fetch_event_description<parameter_type>(identifier)->get_wrapped()->createInstance(&eventInstance));
+        ERROR_CHECK(desc->get_wrapped()->createInstance(&eventInstance));
 
         Ref<FmodEvent> ref = FmodEvent::create_ref(eventInstance);
         if (ref.is_null() || !ref->is_valid()) {
             GODOT_LOG_WARNING("Event Instance is invalid.")
             return {};
+        }
+
+        // FMOD doesn't propagate min/max distance from the event description to
+        // runtime-created instances. This affects ALL events created via
+        // create_event_instance / play_one_shot — the spatializer does angle
+        // panning but skips distance attenuation without these properties.
+        // Persistent FmodEventEmitter3D nodes work because they continuously
+        // update via _process; one-shots don't get that ongoing update.
+        float minDist, maxDist;
+        if (ERROR_CHECK(desc->get_wrapped()->getMinMaxDistance(&minDist, &maxDist))) {
+            eventInstance->setProperty(FMOD_STUDIO_EVENT_PROPERTY_MINIMUM_DISTANCE, minDist);
+            eventInstance->setProperty(FMOD_STUDIO_EVENT_PROPERTY_MAXIMUM_DISTANCE, maxDist);
         }
 
         ref->get_wrapped()->setUserData(ref.ptr());
