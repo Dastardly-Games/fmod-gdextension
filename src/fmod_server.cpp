@@ -219,17 +219,40 @@ void FmodServer::init(const Ref<FmodGeneralSettings>& p_settings) {
     }
     cache = new FmodCache(system, coreSystem);
 
-    // Auto-load Steam Audio FMOD plugin if available (must happen before banks load)
+    // Auto-load Steam Audio FMOD plugin if available (must happen before banks load).
+    // In editor / dev builds, the .so lives under addons/steam_audio/libs (res://).
+    // In exported builds, raven's --runtime-lib copies the binary next to the
+    // executable; the addons path doesn't exist on disk and FMOD's loadPlugin
+    // (dlopen / LoadLibrary) cannot read pck entries — so we have to look at
+    // OS::get_executable_path()'s base dir directly.
     {
+#ifdef WINDOWS_ENABLED
+        const char* exe_basename = "phonon_fmod.dll";
+#elif defined(MACOS_ENABLED)
+        const char* exe_basename = "libphonon_fmod.dylib";
+#else
+        const char* exe_basename = "libphonon_fmod.so";
+#endif
+        String exe_dir = OS::get_singleton()->get_executable_path().get_base_dir();
+        String exe_path = exe_dir.path_join(exe_basename);
+
         String sa_paths[] = {
+            exe_path,
             "res://addons/steam_audio/libs/windows-x64/phonon_fmod.dll",
             "res://addons/steam_audio/libs/linux-x64/libphonon_fmod.so",
             "res://addons/steam_audio/libs/macos/libphonon_fmod.dylib",
         };
         for (const String& sa_path : sa_paths) {
-            if (FileAccess::file_exists(sa_path)) {
+            bool exists;
+            if (sa_path.begins_with("res://")) {
+                exists = FileAccess::file_exists(sa_path);
+            } else {
+                Ref<DirAccess> da = DirAccess::open(sa_path.get_base_dir());
+                exists = da.is_valid() && da->file_exists(sa_path.get_file());
+            }
+            if (exists) {
                 load_plugin(sa_path);
-                GODOT_LOG_INFO("Steam Audio FMOD plugin loaded")
+                GODOT_LOG_INFO(vformat("Steam Audio FMOD plugin loaded: %s", sa_path))
                 break;
             }
         }
