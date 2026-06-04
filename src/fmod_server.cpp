@@ -208,9 +208,11 @@ void FmodServer::init(const Ref<FmodGeneralSettings>& p_settings) {
     // runtime init failure — NOT a build flag — so real gameplay with audio
     // never takes this path; debug + release windowed builds are untouched, and
     // a headless release dedicated server gets the same safe fallback.
+    bool no_audio_device = false;
     FMOD_RESULT init_result = system->initialize(p_settings->get_channel_count(), studio_init_flags, init_flags, nullptr);
     if (init_result != FMOD_OK) {
         GODOT_LOG_WARNING("FMOD Sound System: audio init failed (no device?) — retrying with NOSOUND output")
+        no_audio_device = true;
         coreSystem->setOutput(FMOD_OUTPUTTYPE_NOSOUND);
         init_result = system->initialize(p_settings->get_channel_count(), studio_init_flags, init_flags, nullptr);
     }
@@ -241,7 +243,12 @@ void FmodServer::init(const Ref<FmodGeneralSettings>& p_settings) {
     // executable; the addons path doesn't exist on disk and FMOD's loadPlugin
     // (dlopen / LoadLibrary) cannot read pck entries — so we have to look at
     // OS::get_executable_path()'s base dir directly.
-    {
+    // Skip the Steam Audio FMOD plugin entirely when there's no audio device:
+    // loadPlugin fails and the failed plugin/reverb handle is freed downstream
+    // ("free(): invalid pointer" -> SIGABRT), which kills headless tasks that
+    // merely share this process (the VAT mesh bake / asset import). The plugin
+    // is useless without audio output anyway, so skipping it is correct.
+    if (!no_audio_device) {
 #ifdef WINDOWS_ENABLED
         const char* exe_basename = "phonon_fmod.dll";
 #elif defined(MACOS_ENABLED)
