@@ -89,6 +89,11 @@ namespace godot {
 
         bool isInitialized;
         bool isNotInitializedPrinted;
+        // True when no audio device was available and FMOD fell back to NOSOUND
+        // (headless CI bakes/imports, dedicated servers). 3D/listener/plugin
+        // setup is skipped in this state — those operations are pointless without
+        // an output device and corrupt the heap on a NOSOUND system.
+        bool audioUnavailable = false;
 
         float distanceScale;
 

@@ -208,11 +208,11 @@ void FmodServer::init(const Ref<FmodGeneralSettings>& p_settings) {
     // runtime init failure — NOT a build flag — so real gameplay with audio
     // never takes this path; debug + release windowed builds are untouched, and
     // a headless release dedicated server gets the same safe fallback.
-    bool no_audio_device = false;
+    audioUnavailable = false;
     FMOD_RESULT init_result = system->initialize(p_settings->get_channel_count(), studio_init_flags, init_flags, nullptr);
     if (init_result != FMOD_OK) {
         GODOT_LOG_WARNING("FMOD Sound System: audio init failed (no device?) — retrying with NOSOUND output")
-        no_audio_device = true;
+        audioUnavailable = true;
         coreSystem->setOutput(FMOD_OUTPUTTYPE_NOSOUND);
         init_result = system->initialize(p_settings->get_channel_count(), studio_init_flags, init_flags, nullptr);
     }
@@ -248,7 +248,7 @@ void FmodServer::init(const Ref<FmodGeneralSettings>& p_settings) {
     // ("free(): invalid pointer" -> SIGABRT), which kills headless tasks that
     // merely share this process (the VAT mesh bake / asset import). The plugin
     // is useless without audio output anyway, so skipping it is correct.
-    if (!no_audio_device) {
+    if (!audioUnavailable) {
 #ifdef WINDOWS_ENABLED
         const char* exe_basename = "phonon_fmod.dll";
 #elif defined(MACOS_ENABLED)
@@ -379,6 +379,7 @@ void FmodServer::shutdown() {
 }
 
 void FmodServer::set_system_listener_number(int p_listenerNumber) {
+    if (audioUnavailable) { return; } // no device -> NOSOUND system, listener ops are pointless + heap-unsafe
     if (p_listenerNumber > 0 && p_listenerNumber <= FMOD_MAX_LISTENERS) {
         if (ERROR_CHECK_WITH_REASON(system->setNumListeners(p_listenerNumber), vformat("Cannot set listener count to %d", p_listenerNumber))) {
             systemListenerNumber = p_listenerNumber;
@@ -961,6 +962,7 @@ FMOD::Sound* FmodServer::create_sound(FMOD_STUDIO_SOUND_INFO& sound_info, FMOD_M
 }
 
 void FmodServer::set_sound_3d_settings(const Ref<FmodSound3DSettings>& p_settings) {
+    if (audioUnavailable) { return; } // no device -> NOSOUND system, 3D settings are pointless + heap-unsafe
     float distance_factor = p_settings->get_distance_factor();
     if (distance_factor <= 0) {
         GODOT_LOG_ERROR("FMOD Sound System: Failed to set 3D settings - invalid distance factor!")
