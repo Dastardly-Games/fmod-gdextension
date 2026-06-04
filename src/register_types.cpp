@@ -1,5 +1,6 @@
 #include "constants.h"
 #include "core/fmod_sound.h"
+#include <classes/os.hpp>
 #include "data/performance_data.h"
 #include "fmod_server.h"
 #include "nodes/fmod_bank_loader.h"
@@ -48,6 +49,18 @@ void initialize_fmod_with_settings() {
 }
 
 void initialize_fmod() {
+    // FMOD_DISABLE_INIT=1 — set by the csx-driven headless asset/VAT bake +
+    // --import launches (scripts/common.csx EnsureVatBakes). On deviceless CI
+    // agents FMOD's no-audio init/teardown corrupts the heap (SIGABRT), which
+    // aborts the shared editor process and breaks the (audio-free) mesh bake that
+    // just shares it. The editor branch below force-inits FMOD even in --import,
+    // and --headless / DisplayServer aren't reliably detectable this early — so an
+    // env var we fully control is the robust opt-out. Skips FMOD entirely; the
+    // bake/import use no audio, and FmodServer stays uninitialised (update() etc.
+    // already no-op on !isInitialized). Real gameplay never sets this.
+    if (OS::get_singleton()->get_environment("FMOD_DISABLE_INIT") == "1") {
+        return;
+    }
 #ifdef TOOLS_ENABLED
     if (Engine::get_singleton()->is_editor_hint()) {
         initialize_fmod_with_settings();
