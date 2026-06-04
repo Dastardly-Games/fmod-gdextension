@@ -199,22 +199,20 @@ void FmodServer::init(const Ref<FmodGeneralSettings>& p_settings) {
 
     FMOD_INITFLAGS init_flags = FMOD_INIT_3D_RIGHTHANDED;
 
-    // Try a normal init first. If it FAILS there is no usable audio device —
-    // headless CI VAT/import bakes, dedicated servers, or a broken sound stack,
-    // where the default output (ALSA etc.) returns e.g. "Host is down". That
-    // failure would otherwise destabilise the shared process and break UNRELATED
-    // headless tasks (the mesh VAT bake just shares this editor process), so we
-    // fall back to a silent NOSOUND output and re-init. Gated on the ACTUAL
-    // runtime init failure — NOT a build flag — so real gameplay with audio
-    // never takes this path; debug + release windowed builds are untouched, and
-    // a headless release dedicated server gets the same safe fallback.
+    // Initialize ONCE. If it fails there's no usable audio device (headless CI
+    // VAT/asset bakes, dedicated servers, broken sound stack). Do NOT retry: a
+    // second initialize() on the already-half-initialized system corrupts the
+    // heap ("malloc(): invalid size" -> SIGABRT), which aborts the shared headless
+    // editor process and breaks UNRELATED tasks in it (the mesh VAT bake just
+    // shares this process). Instead mark audioUnavailable and skip the plugin +
+    // 3D/listener setup below (pointless and heap-unsafe without a device).
+    // Keyed on the ACTUAL init result — reliable, no headless detection needed,
+    // and inert for real gameplay where init succeeds.
     audioUnavailable = false;
     FMOD_RESULT init_result = system->initialize(p_settings->get_channel_count(), studio_init_flags, init_flags, nullptr);
     if (init_result != FMOD_OK) {
-        GODOT_LOG_WARNING("FMOD Sound System: audio init failed (no device?) — retrying with NOSOUND output")
         audioUnavailable = true;
-        coreSystem->setOutput(FMOD_OUTPUTTYPE_NOSOUND);
-        init_result = system->initialize(p_settings->get_channel_count(), studio_init_flags, init_flags, nullptr);
+        GODOT_LOG_WARNING("FMOD Sound System: no audio device — audio disabled (silent); skipping plugin/3D setup")
     }
 
     if (init_result == FMOD_OK) {
