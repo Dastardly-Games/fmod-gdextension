@@ -199,7 +199,23 @@ void FmodServer::init(const Ref<FmodGeneralSettings>& p_settings) {
 
     FMOD_INITFLAGS init_flags = FMOD_INIT_3D_RIGHTHANDED;
 
-    if (ERROR_CHECK(system->initialize(p_settings->get_channel_count(), studio_init_flags, init_flags, nullptr))) {
+    // Try a normal init first. If it FAILS there is no usable audio device —
+    // headless CI VAT/import bakes, dedicated servers, or a broken sound stack,
+    // where the default output (ALSA etc.) returns e.g. "Host is down". That
+    // failure would otherwise destabilise the shared process and break UNRELATED
+    // headless tasks (the mesh VAT bake just shares this editor process), so we
+    // fall back to a silent NOSOUND output and re-init. Gated on the ACTUAL
+    // runtime init failure — NOT a build flag — so real gameplay with audio
+    // never takes this path; debug + release windowed builds are untouched, and
+    // a headless release dedicated server gets the same safe fallback.
+    FMOD_RESULT init_result = system->initialize(p_settings->get_channel_count(), studio_init_flags, init_flags, nullptr);
+    if (init_result != FMOD_OK) {
+        GODOT_LOG_WARNING("FMOD Sound System: audio init failed (no device?) — retrying with NOSOUND output")
+        coreSystem->setOutput(FMOD_OUTPUTTYPE_NOSOUND);
+        init_result = system->initialize(p_settings->get_channel_count(), studio_init_flags, init_flags, nullptr);
+    }
+
+    if (init_result == FMOD_OK) {
         isInitialized = true;
         GODOT_LOG_INFO("FMOD Sound System: Successfully initialized")
 
