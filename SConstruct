@@ -9,12 +9,47 @@ target_path = ARGUMENTS.pop("target_path", "demo/addons/fmod/libs/")
 target_name = ARGUMENTS.pop("target_name", "libGodotFmod")
 fmod_lib_dir = ARGUMENTS.pop("fmod_lib_dir", "../libs/fmod/")
 
-env = SConscript("godot-cpp/SConstruct")
+# FANTASY_TW: reuse a prebuilt godot-cpp (e.g. the host's double-precision build)
+# instead of this submodule's own godot-cpp (pinned godot-4.5). Lets the FMOD
+# wrapper match the host engine's precision/version — see
+# docs/toolchain_double_precision.md. Linux-focused; other platforms keep the
+# upstream SConscript path. The FMOD SDK .so's are precision-agnostic.
+_reuse_gc = ARGUMENTS.get("reuse_godot_cpp", "")
+_precision = ARGUMENTS.get("precision", "single")
+if _reuse_gc:
+    _plat = ARGUMENTS.get("platform", "linux")
+    _tgt = ARGUMENTS.get("target", "template_debug")
+    _arch = ARGUMENTS.get("arch", "x86_64")
+    _prec_infix = ".double" if _precision == "double" else ""
+    _gc_lib = "{}/bin/libgodot-cpp.{}.{}{}.{}.a".format(_reuse_gc, _plat, _tgt, _prec_infix, _arch)
+    if not os.path.exists(_gc_lib):
+        print("ERROR: reuse_godot_cpp lib missing: " + _gc_lib)
+        Exit(1)
+    env = Environment()
+    env.Append(CXXFLAGS=["-fno-gnu-unique", "-std=c++17", "-fno-exceptions",
+                         "-fPIC", "-fvisibility=hidden", "-O2"])
+    _defs = ["LINUX_ENABLED", "UNIX_ENABLED", "THREADS_ENABLED", "GDEXTENSION"]
+    _defs += (["DEBUG_ENABLED", "HOT_RELOAD_ENABLED"] if _tgt == "template_debug" else ["NDEBUG"])
+    if _precision == "double":
+        _defs.append("REAL_T_IS_DOUBLE")
+    env.Append(CPPDEFINES=_defs)
+    env.Append(CPPPATH=[_reuse_gc + "/include", _reuse_gc + "/gen/include"])
+    env.Append(LIBS=[File(_gc_lib)])
+    env["platform"] = _plat
+    env["target"] = _tgt
+    env["arch"] = _arch
+    env["SHLIBSUFFIX"] = ".so"
+    print("FMOD: REUSING prebuilt godot-cpp -> " + _gc_lib)
+else:
+    env = SConscript("godot-cpp/SConstruct")
 
-# Add those directory manually, so we can skip the godot_cpp directory when including headers in C++ files
+# Add those directory manually, so we can skip the godot_cpp directory when including headers in C++ files.
+# In reuse mode these must come from the REUSED godot-cpp tree (not this
+# submodule's 4.5 one) or both versions' headers collide (redefinition errors).
+_gc_base = _reuse_gc if _reuse_gc else "godot-cpp"
 source_path = [
-    os.path.join("godot-cpp", "include","godot_cpp"),
-    os.path.join("godot-cpp", "gen", "include","godot_cpp")
+    os.path.join(_gc_base, "include","godot_cpp"),
+    os.path.join(_gc_base, "gen", "include","godot_cpp")
 ]
 env.Append(CPPPATH=[env.Dir(d) for d in source_path])
 
