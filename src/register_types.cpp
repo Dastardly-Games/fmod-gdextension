@@ -124,7 +124,13 @@ void initialize_fmod_module(ModuleInitializationLevel p_level) {
         initialize_fmod();
     }
 #ifdef TOOLS_ENABLED
-    if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
+    // Under FMOD_DISABLE_INIT (headless asset/VAT bake on no-audio CI), also skip
+    // the FMOD editor plugin: add_by_type<FmodEditorPlugin>() instantiates it
+    // during the headless --import editor, and that path frees an invalid pointer
+    // -> SIGABRT (confirmed by the import's gdb backtrace landing in libGodotFmod).
+    // The bake uses no FMOD, so skipping the editor plugin too makes fmod a no-op.
+    if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR
+        && OS::get_singleton()->get_environment("FMOD_DISABLE_INIT") != "1") {
         ClassDB::register_class<FmodEditorExportPlugin>();
         ClassDB::register_class<FmodEditorPlugin>();
         EditorPlugins::add_by_type<FmodEditorPlugin>();
