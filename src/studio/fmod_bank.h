@@ -44,8 +44,9 @@ namespace godot {
 
         const String& get_godot_res_path() const;
 
-        inline static Ref<FmodBank> create_ref(FMOD::Studio::Bank* wrapped, const String& p_godot_res_path) {
-            Ref<FmodBank> ref { create_ref(wrapped) };
+        template <typename T = FmodBank>
+        inline static Ref<T> create_ref(FMOD::Studio::Bank* wrapped, const String& p_godot_res_path) {
+            Ref<T> ref { create_ref(wrapped) };
             ref->_godot_res_path = p_godot_res_path;
             return ref;
         }

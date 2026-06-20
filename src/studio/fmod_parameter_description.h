@@ -23,8 +23,9 @@ namespace godot {
         bool is_discrete() const;
         bool is_labeled() const;
 
-        inline static Ref<FmodParameterDescription> create_ref(const FMOD_STUDIO_PARAMETER_DESCRIPTION& wrapped) {
-            Ref<FmodParameterDescription> ref;
+        template <typename T = FmodParameterDescription>
+        inline static Ref<T> create_ref(const FMOD_STUDIO_PARAMETER_DESCRIPTION& wrapped) {
+            Ref<T> ref;
             ref.instantiate();
             ref->_wrapped = wrapped;
             ref->_name = wrapped.name;

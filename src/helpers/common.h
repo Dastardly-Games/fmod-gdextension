@@ -34,8 +34,9 @@ private:                                                      \
     m_owned* _wrapped = nullptr;                              \
                                                               \
 public:                                                       \
-    inline static Ref<m_class> create_ref(m_owned* wrapped) { \
-        Ref<m_class> ref;                                     \
+    template <typename T = m_class>                           \
+    inline static Ref<T> create_ref(m_owned* wrapped) {       \
+        Ref<T> ref;                                           \
         if (wrapped) {                                        \
             ref.instantiate();                                \
             ref->_wrapped = wrapped;                          \
@@ -62,8 +63,9 @@ private:                                                                 \
     String _path;                                                        \
                                                                          \
 public:                                                                  \
-    inline static Ref<m_class> create_ref(m_owned* wrapped) {            \
-        Ref<m_class> ref;                                                \
+    template <typename T = m_class>                                     \
+    inline static Ref<T> create_ref(m_owned* wrapped) {                 \
+        Ref<T> ref;                                                     \
         if (wrapped) {                                                   \
             ref.instantiate();                                           \
             ref->_wrapped = wrapped;                                     \

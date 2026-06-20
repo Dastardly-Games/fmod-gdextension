@@ -11,8 +11,9 @@ namespace godot {
         FMOD::Channel* _wrapped = nullptr;
 
     public:
-        inline static Ref<FmodSound> create_ref(FMOD::Channel* wrapped) {
-            Ref<FmodSound> ref;
+        template <typename T = FmodSound>
+        inline static Ref<T> create_ref(FMOD::Channel* wrapped) {
+            Ref<T> ref;
             if (wrapped) {
                 ref.instantiate();
                 ref->_wrapped = wrapped;
