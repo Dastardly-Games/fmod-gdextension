@@ -54,6 +54,15 @@ if _reuse_gc:
 else:
     env = SConscript("godot-cpp/SConstruct")
 
+# Cache-safe MSVC debug info (see sim/SConstruct _set_cache_safe_debug): a build
+# cache stores the .obj but not the separate .pdb that /Zi writes to, so a cached
+# object links LNK4099 and godot-cpp's linker /WX makes it fatal. /Z7 embeds debug
+# in the .obj -> self-contained + cache-safe. No-op off MSVC.
+if bool(env.get("is_msvc", False)) or str(env.get("CC", "")) == "cl":
+    env["CCFLAGS"] = [f for f in env.get("CCFLAGS", []) if str(f) not in ("/Zi", "/FS")]
+    env.AppendUnique(CCFLAGS=["/Z7"])
+    env.AppendUnique(LINKFLAGS=["/ignore:4099"])
+
 # Add those directory manually, so we can skip the godot_cpp directory when including headers in C++ files.
 # In reuse mode these must come from the REUSED godot-cpp tree (not this
 # submodule's 4.5 one) or both versions' headers collide (redefinition errors).
