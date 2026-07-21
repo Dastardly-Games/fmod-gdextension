@@ -3,7 +3,18 @@ import os
 import shutil
 import subprocess
 
-from SCons.Script import SConscript, ARGUMENTS, Action, Copy
+from SCons.Script import SConscript, ARGUMENTS, Action, Copy, CacheDir, Decider
+
+# ---- SCons build-node cache (CI) ----
+# Content-addressed .o/.a cache (godot-cpp's SConstruct pattern) so unchanged
+# sources skip recompilation. ccache can't reach the Windows mingw build
+# (absolute-path compiler, no launcher hook); SCons' CacheDir keyed on MD5 does
+# the caching instead. Dir from $SCONS_CACHE (set by the CI setup, persisted
+# outside the checkout); no-op locally when unset.
+scons_cache_path = os.environ.get("SCONS_CACHE")
+if scons_cache_path is not None:
+    CacheDir(scons_cache_path)
+    Decider("MD5")
 
 target_path = ARGUMENTS.pop("target_path", "demo/addons/fmod/libs/")
 target_name = ARGUMENTS.pop("target_name", "libGodotFmod")
