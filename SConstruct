@@ -54,14 +54,9 @@ if _reuse_gc:
 else:
     env = SConscript("godot-cpp/SConstruct")
 
-# Cache-safe MSVC debug info (see sim/SConstruct _set_cache_safe_debug): a build
-# cache stores the .obj but not the separate .pdb that /Zi writes to, so a cached
-# object links LNK4099 and godot-cpp's linker /WX makes it fatal. /Z7 embeds debug
-# in the .obj -> self-contained + cache-safe. No-op off MSVC.
-if bool(env.get("is_msvc", False)) or str(env.get("CC", "")) == "cl":
-    env["CCFLAGS"] = [f for f in env.get("CCFLAGS", []) if str(f) not in ("/Zi", "/FS")]
-    env.AppendUnique(CCFLAGS=["/Z7"])
-    env.AppendUnique(LINKFLAGS=["/ignore:4099"])
+# (Cache-safe MSVC debug info used to be handled here, but the windows platform
+#  block below re-appends /FS + /Zi afterwards and silently undid it. Moved to
+#  _cache_safe_debug() further down, after the whole platform chain.)
 
 # Add those directory manually, so we can skip the godot_cpp directory when including headers in C++ files.
 # In reuse mode these must come from the REUSED godot-cpp tree (not this
@@ -176,6 +171,38 @@ elif env["platform"] == "android":
     env.Append(CPPPATH=[env['fmod_lib_dir'] + 'android/core/inc/', env['fmod_lib_dir'] + 'android/studio/inc/'])
     env.Append(LIBPATH=[env['fmod_lib_dir'] + 'android/core/lib/' + arch_dir, env['fmod_lib_dir'] + 'android/studio/lib/' + arch_dir])
     env.Append(LIBS=[libfmod, libfmodstudio])
+
+# --- Cache-safe MSVC debug info -------------------------------------------------
+# Kept byte-identical with the copies in sim/SConstruct and in the sibling game
+# repo. If you change one, change all of them.
+#
+# A build cache (SCons CacheDir / ccache) stores the .obj but NOT the separate .pdb
+# that /Zi writes debug info into. A cache-HIT object therefore links with LNK4099
+# ("PDB not found"), and godot-cpp's linker /WX promotes that to a fatal LNK1218
+# with no output file. /Z7 EMBEDS debug info in the .obj, so a cached object is
+# self-contained and links clean WITH full symbols.
+#
+# This rewrites only the debug-info FORMAT, never whether symbols are emitted: if
+# nothing asked for debug info, none is added. No codegen or ABI impact, so every
+# consumer links exactly as before. Idempotent. No-op off MSVC — GCC/Clang already
+# embed DWARF in the .o, which is why Linux never hit this.
+def _cache_safe_debug(e):
+    if not (bool(e.get("is_msvc", False)) or str(e.get("CC", "")) == "cl"):
+        return e
+    wants_symbols = any(str(f) in ("/Zi", "/ZI", "/Z7") for f in e.get("CCFLAGS", []))
+    # /FS is meaningless without /Zi; /ZI (edit-and-continue) also splits out a .pdb.
+    e["CCFLAGS"] = [f for f in e.get("CCFLAGS", []) if str(f) not in ("/Zi", "/ZI", "/FS")]
+    if wants_symbols:
+        e.AppendUnique(CCFLAGS=["/Z7"])
+    # Net for objects still carrying /Zi from an older cache entry.
+    e.AppendUnique(LINKFLAGS=["/ignore:4099"])
+    return e
+
+
+# Placement here is load-bearing, and differs from sim/SConstruct on purpose: the
+# windows block above re-appends /FS + /Zi on top of godot-cpp's, so this has to run
+# after the whole platform chain. Keep it directly ahead of the target below.
+_cache_safe_debug(env)
 
 #Output is placed in the addons directory of the demo project directly
 target = "{}{}/{}.{}.{}".format(
