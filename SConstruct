@@ -122,6 +122,38 @@ elif env["platform"] == "android":
     env.Append(LIBPATH=[env['fmod_lib_dir'] + 'android/core/lib/' + arch_dir, env['fmod_lib_dir'] + 'android/studio/lib/' + arch_dir])
     env.Append(LIBS=[libfmod, libfmodstudio])
 
+# --- Cache-safe MSVC debug info -------------------------------------------------
+# Kept byte-identical with the copies in sim/SConstruct and in the sibling game
+# repo. If you change one, change all of them.
+#
+# A build cache (SCons CacheDir / ccache) stores the .obj but NOT the separate .pdb
+# that /Zi writes debug info into. A cache-HIT object therefore links with LNK4099
+# ("PDB not found"), and godot-cpp's linker /WX promotes that to a fatal LNK1218
+# with no output file. /Z7 EMBEDS debug info in the .obj, so a cached object is
+# self-contained and links clean WITH full symbols.
+#
+# This rewrites only the debug-info FORMAT, never whether symbols are emitted: if
+# nothing asked for debug info, none is added. No codegen or ABI impact, so every
+# consumer links exactly as before. Idempotent. No-op off MSVC — GCC/Clang already
+# embed DWARF in the .o, which is why Linux never hit this.
+def _cache_safe_debug(e):
+    if not (bool(e.get("is_msvc", False)) or str(e.get("CC", "")) == "cl"):
+        return e
+    wants_symbols = any(str(f) in ("/Zi", "/ZI", "/Z7") for f in e.get("CCFLAGS", []))
+    # /FS is meaningless without /Zi; /ZI (edit-and-continue) also splits out a .pdb.
+    e["CCFLAGS"] = [f for f in e.get("CCFLAGS", []) if str(f) not in ("/Zi", "/ZI", "/FS")]
+    if wants_symbols:
+        e.AppendUnique(CCFLAGS=["/Z7"])
+    # Net for objects still carrying /Zi from an older cache entry.
+    e.AppendUnique(LINKFLAGS=["/ignore:4099"])
+    return e
+
+
+# Placement here is load-bearing, and differs from sim/SConstruct on purpose: the
+# windows block above re-appends /FS + /Zi on top of godot-cpp's, so this has to run
+# after the whole platform chain. Keep it directly ahead of the target below.
+_cache_safe_debug(env)
+
 #Output is placed in the addons directory of the demo project directly
 target = "{}{}/{}.{}.{}".format(
     target_path, env["platform"], target_name, env["platform"], env["target"]
